@@ -103,6 +103,97 @@ Hadoop样例2：
 用MapReduce进行排序
 分区->reduce排序
 
+hadoop 1.x默认block大小为64MB
+hadoop 2.x默认block大小为128MB
+可以在hdfs-site.xml中设置参数：dfs.block.size
+
+由于NameNode内存有限，大量的小文件会给HDFS带来性能上的问题，故适合存放大文件
+在实际情况下，map任务个数受多个条件限制，一般一个datanode的map任务数量控制在10-100比较合适
+增加map个数，可增大mapred.map.tasks
+减少map个数，可增大mapred.min.split.size
+如果要减少map个数，但有很多小文件，可以先合并成大文件，再使用准则2
+
+map-shuffle中间的本地优化过程：combine
+在本地按照key先行一轮排序和合并，再进行网络混洗
+在多数情况下combine可以看成是对本地数据的reduce操作，可以复用reduce的逻辑
+job.setCombinerClass(MyReduce.class)
+job.setReducerClass(MyReduce.class)
+
+在一个MapReduce作业中，以下三者的数量总是相等的：
+patitoner的数量
+reduce任务的数量
+最终输出文件
+
+reduce任务数量建议设为一个较大的值
+调节参数mapred.reduce.tasks
+再代码中调用job.setNumReduceTasks(int n)的方法
+
+Hadoop的分布式缓存
+1.在main方法中加载共享文件的HDFS路径（目录/文件），可以在末尾#+别名
+  String cache = "hdfs://10.105.xxx.xxx:8020/cache/file"; //目录
+  cache = cache + ”#myfile“  //别名
+  job.addCacheFile(new Path(cache).toUri(),conf);
+2.在Mapper类/Reducer的setup方法中，用输入流获取分布式缓存中的文件
+ protected void setup(Context context)throwa IOException,InterruptedException{
+   FileReader reader = new FileReader("myfile");
+   BufferedReader br = new BufferedReader(reader);
+   ...
+   }
+
+矩阵相乘
+矩阵在文件中的表示:
+  1 2 -2 0
+  3 3 4 -3
+  
+  行 tab 列_值 列_值  列_值     列_值
+  1      1_1，   2_2，  3_-2，  4_0
+  
+思路：
+1.将右矩阵转置 即可转化为左矩阵行与右矩阵的行相乘
+2.将整个右矩阵载入分布式缓存
+3.将左矩阵的行作为Map输入
+4.在Map执行之前将缓存的右矩阵以行为单位放入List
+5.在Map计算时从List中取出所有行分别与输入行相乘
+
+相似度
+余弦相似度
+欧氏距离
+切比雪夫距离
+...
+
+
+ItemCF 基于物品的推荐算法
+算法思想：推荐与用户之前喜欢的物品相似的物品
+MapReduce步骤
+步骤1：根据用户行为列表计算用户、物品的评分矩阵
+       输入:用户ID,物品ID，分值
+	   输出：物品ID(行) - 用户ID(列) - 分值
+	   
+步骤2：根据用户、物品的评分矩阵计算物品和物品的相似度矩阵
+       cos<a,b>
+       方阵 对角线对称 两两相乘得到内容
+	   输入：步骤1的输出
+	   缓存：步骤1的输出
+	   （输出和缓存是相同的文件）
+	   输出：物品ID（行）-物品ID(列)-相似度
+	   
+步骤3：相似度矩阵 * 评分矩阵 = 推荐列表
+       3‘1：将评分矩阵转置
+	   输入：步骤1的输出
+	   输出：用户ID（行）-物品（列）-分值
+	   
+	   3’2：相似度矩阵*评分矩阵（经过转置之后）
+	   输入：步骤2的输出
+	   缓存：步骤3的输出
+	   输出：物品ID(行) -用户ID（列）-分值
+	   
+步骤4: 将推荐列表中之前有过行为的(评分矩阵不为0)的元素置零
+       输入：步骤4的输出
+	   缓存：步骤1的输出
+	   输出：用户ID(行)-物品ID(列)-分值（最终的推荐列表）
+	   
+//步骤5:取出最感兴趣的物品
+
 
  
 
